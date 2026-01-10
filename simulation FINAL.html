@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dual Spheres — Alice & Bob</title>
+  <style>
+    :root{--gap:12px}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#07101a;color:#dbe7f7}
+    .wrap{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);height:calc(100vh - 170px);padding:var(--gap);box-sizing:border-box}
+    .panel{display:flex;flex-direction:column;background:#0f1724;border-radius:10px;padding:10px;overflow:hidden;position:relative}
+    .title{color:#e6eef8;font-weight:600;padding-bottom:6px}
+    .view{flex:1;position:relative;border-radius:8px;overflow:hidden;background:#08101a}
+    canvas{width:100%;height:100%;display:block}
+    .controls{display:flex;align-items:center;gap:8px;padding-top:8px}
+    .label{color:#cbd5e1;font-size:13px;min-width:72px}
+    input[type=range]{flex:1}
+    input[type=number]{width:70px;padding:4px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:#07202a;color:#e6eef8}
+    .val{color:#99a3b5;width:56px;text-align:right}
+    .hint{color:#7b8794;font-size:12px;margin-top:6px}
+
+    .corner-info{position:absolute;left:8px;top:8px;background:rgba(0,0,0,0.32);backdrop-filter:blur(4px);padding:8px;border-radius:6px;color:#cfe6ff;font-size:13px}
+    .corner-info div{line-height:1.1}
+    .invalid-info{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,0.32);backdrop-filter:blur(4px);padding:6px;border-radius:6px;color:#ffdede;font-size:13px;text-align:right}
+
+    /* bottom bar */
+    .bottom-bar{height:170px;background:linear-gradient(180deg,#071726,#021017);display:flex;align-items:flex-start;gap:12px;padding:10px 14px;box-sizing:border-box;border-top:1px solid rgba(255,255,255,0.03)}
+    .shared-col{flex:1;display:flex;flex-direction:column;gap:6px}
+    .shared-row{display:flex;align-items:center;gap:8px}
+    .data-tab{width:420px;background:#071827;border-radius:8px;padding:10px;color:#9fb0c9}
+    .lock-btn{padding:8px 10px;border-radius:6px;background:#113244;border:1px solid #214b63;color:#bfe0ff;cursor:pointer}
+    .lock-btn.active{background:#2a5b7a}
+    .small{font-size:12px;color:#7b8794}
+    .btn-row{display:flex;flex-direction:column;gap:8px}
+    .color-btn{padding:8px 10px;border-radius:6px;background:#243b4a;border:1px solid #214b63;color:#bfe7ff;cursor:pointer}
+
+    .modal{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center}
+    .modal-inner{background:#07202a;border-radius:10px;padding:16px;color:#dbe7f7;width:420px}
+    .row{display:flex;align-items:center;gap:8px;margin-top:8px}
+
+    footer{height:0;margin:0;padding:0}
+    @media(max-width:950px){.wrap{grid-template-columns:1fr;grid-auto-rows:1fr;height:calc(100vh - 260px)}}
+  </style>
+
+  <script src="https://unpkg.com/three@0.154.0/build/three.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel" id="panelLeft">
+      <div class="title">Alice</div>
+      <div class="view">
+        <canvas id="canvasLeft"></canvas>
+        <div class="corner-info" id="aliceCorner">
+          <div><strong>Red Area</strong>: <span id="aliceRed">0π</span></div>
+          <div><strong>Blue Area</strong>: <span id="aliceBlue">0π</span></div>
+        </div>
+        <div class="invalid-info" id="aliceInvalid">Invalid States: none</div>
+      </div>
+      <div class="controls">
+        <div class="label">Alice's Angle</div>
+        <input id="sliderLeft" type="range" min="-180" max="180" step="1" value="0">
+        <input id="inputLeft" type="number" step="1" value="0">
+        <div class="val" id="valLeft">0°</div>
+      </div>
+      <div class="hint">Rotate view to rotate sphere and the labeled axes. Alice colors are inverted.</div>
+    </div>
+
+    <div class="panel" id="panelRight">
+      <div class="title">Bob</div>
+      <div class="view">
+        <canvas id="canvasRight"></canvas>
+        <div class="corner-info" id="bobCorner">
+          <div><strong>Red Area</strong>: <span id="bobRed">0π</span></div>
+          <div><strong>Blue Area</strong>: <span id="bobBlue">0π</span></div>
+        </div>
+        <div class="invalid-info" id="bobInvalid">Invalid States: none</div>
+      </div>
+      <div class="controls">
+        <div class="label">Bob's Angle</div>
+        <input id="sliderRight" type="range" min="-180" max="180" step="1" value="0">
+        <input id="inputRight" type="number" step="1" value="0">
+        <div class="val" id="valRight">0°</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="shared-col">
+      <div class="shared-row"><div class="label">Rotate frame</div><div style="flex:1"></div><div id="sharedVal" class="val">0°</div></div>
+      <input id="sharedSlider" type="range" min="-180" max="180" step="1" value="0">
+      <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+        <input id="inputShared" type="number" step="1" value="0">
+        <div class="small">Keep both phases shifted equally.</div>
+      </div>
+
+      <div style="height:8px"></div>
+
+      <div class="shared-row"><div class="label">θ</div><div style="flex:1"></div><div id="thetaVal" class="val">0°</div></div>
+      <input id="thetaSlider" type="range" min="0" max="180" step="1" value="0">
+      <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+        <input id="inputTheta" type="number" step="1" value="0">
+        <div class="small">Adds a grey band around demarcations.</div>
+      </div>
+
+    </div>
+
+    <div style="width:12px"></div>
+
+    <div class="btn-row">
+      <button id="lockViewBtn" class="lock-btn" title="Lock relative views (camera/sphere rotation sync)">Lock views</button>
+      <button id="resetCamerasBtn" class="lock-btn" title="Reset cameras and sphere orientation">Reset cameras</button>
+      <button id="resetAllBtn" class="lock-btn" title="Reset all fields">Reset all fields</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="startSimBtn" class="lock-btn" title="Run Monte Carlo simulation">Start Simulation</button>
+        <input id="simSamples" type="number" min="1" step="1" value="100000" style="width:120px;background:#07202a;color:#dbe7f7;border-radius:6px;border:1px solid rgba(255,255,255,0.06);padding:6px">
+        
+        
+      </div>
+      <button id="colorBtn" class="color-btn" title="Change red/blue/grey colors">Change colors</button>
+      <div class="small">When locked, rotating/zooming one view applies same change to the other.</div>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <div class="data-tab">
+      <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-weight:600">Data</div><button id="infoBtn" class="lock-btn" title="Info">?</button></div> 
+      <div id="angleAB">∠AB = 0°</div>
+      <div id="qmCorr" class="small" style="margin-top:6px">QM correlation: 0</div>
+      <div style="margin-top:8px">Area overlap (++/--): <span id="overlapSame">0π</span></div>
+      <div>Area overlap (+-/-+): <span id="overlapOpp">0π</span></div>
+      <div style="margin-top:6px">Avg overlap (++/--): <span id="avgOverlapSame">0π</span></div>
+      <div>Avg overlap (+-/-+): <span id="avgOverlapOpp">0π</span></div>
+      <div style="margin-top:6px">Correlation: <span id="correlation">0.0000</span></div>
+      <div id="simProgress" class="small" style="margin-top:6px">Simulation idle</div>
+      <div id="rawPhases" class="small" style="margin-top:6px">Alice: 0° — Bob: 0°</div>
+    </div>
+  </div>
+
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.body.innerHTML = '<p style="color:white;padding:20px">Three.js failed to load from CDN.</p>';
+      throw new Error('THREE not available');
+    }
+
+    function mod(a, m){ return ((a % m) + m) % m; }
+    function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+    const sphereGeo = new THREE.SphereGeometry(1, 64, 64);
+
+    const vertexShader = `
+      varying vec3 vWorldNormal;
+      void main(){
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+      }
+    `;
+
+    const fragmentShader = `
+      precision highp float;
+      varying vec3 vWorldNormal;
+      uniform vec3 colorA; // red
+      uniform vec3 colorB; // blue
+      uniform vec3 greyColor;
+      uniform vec3 maskAxis;
+      uniform float phaseDeg; // degrees (negated by JS)
+      uniform float thetaDeg; // degrees, 0..180
+      uniform vec3 lightDir;
+      const float PI = 3.141592653589793;
+
+      float posmod(float x, float m){ float r = mod(x,m); if(r < 0.0) r += m; return r; }
+      float circDist(float a, float b, float m){ float d = abs(a - b); return min(d, m - d); }
+
+      void main(){
+        vec3 N = normalize(vWorldNormal);
+        float Ndot = dot(N, normalize(maskAxis));
+        float lat = asin(clamp(Ndot,-1.0,1.0));
+        float latDeg = lat * 180.0 / PI;
+
+        float f = 0.0;
+        float redLen = 180.0 + f;
+        float per = 360.0;
+
+        float thetaRad = thetaDeg * PI / 180.0;
+        float greyThreshold = 0.5 * pow(sin(thetaRad), 2.0);
+
+        float u = latDeg - (phaseDeg + f);
+        float s = posmod(u + per*1000.0, per);
+
+        float dStartDeg = circDist(s, 0.0, per);
+        float dEndDeg = circDist(s, redLen, per);
+        float alphaStart = dStartDeg * PI / 180.0;
+        float alphaEnd = dEndDeg * PI / 180.0;
+
+        bool isGrey = false;
+        if (abs(sin(alphaStart)) <= greyThreshold || abs(sin(alphaEnd)) <= greyThreshold) isGrey = true;
+
+        float mask = 0.0;
+        if (!isGrey) {
+          if (redLen <= 0.0) { mask = 0.0; }
+          else if (redLen >= per) { mask = 1.0; }
+          else { mask = (s < redLen) ? 1.0 : 0.0; }
+        }
+
+        vec3 col = isGrey ? greyColor : mix(colorB, colorA, mask);
+
+        float lam = max(dot(N, normalize(lightDir)), 0.0);
+        float base = 0.25 + 0.75 * lam;
+        float rim = pow(1.0 - max(0.0, dot(N, vec3(0.0,0.0,1.0))), 2.0);
+        col += 0.06 * rim;
+
+        gl_FragColor = vec4(col * base, 1.0);
+      }
+    `;
+
+    let colorRed = '#ff3b3b';
+    let colorBlue = '#3b7fff';
+    let colorGrey = '#888888';
+
+    function makeMaterial(colorAhex, colorBhex){
+      const colorA = new THREE.Color(colorAhex);
+      const colorB = new THREE.Color(colorBhex);
+      const grey = new THREE.Color(colorGrey);
+      return new THREE.ShaderMaterial({
+        vertexShader,
+        fragmentShader,
+        uniforms: {
+          colorA: { value: colorA },
+          colorB: { value: colorB },
+          greyColor: { value: grey },
+          maskAxis: { value: new THREE.Vector3(0,1,0) },
+          phaseDeg: { value: 0.0 },
+          thetaDeg: { value: 0.0 },
+          lightDir: { value: new THREE.Vector3(1,1,0.5).normalize() }
+        }
+      });
+    }
+
+    const viewports = [];
+    let sharedPrev = 0;
+    let cameraLock = false;
+
+    function makeTextSprite(message) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128; canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(0,0,0,0)'; ctx.fillRect(0,0,canvas.width, canvas.height);
+      ctx.font = '28px sans-serif'; ctx.fillStyle = '#cff2ff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(message, canvas.width/2, canvas.height/2);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+      return new THREE.Sprite(material);
+    }
+
+    class Viewport {
+      constructor(canvas, sliderEl, valEl, opts={}){
+        this.canvas = canvas;
+        this.renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+        this.renderer.setPixelRatio(window.devicePixelRatio || 1);
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+        this.camera.position.set(0,0,3.2);
+        this.minDistance = 1.6; this.maxDistance = 8;
+        this.slider = sliderEl; this.val = valEl; this.invert = opts.invert || false;
+        const colNorth = this.invert ? colorBlue : colorRed;
+        const colSouth = this.invert ? colorRed : colorBlue;
+        this.material = makeMaterial(colNorth, colSouth);
+        this.sphere = new THREE.Mesh(sphereGeo, this.material);
+        this.scene.add(this.sphere);
+        this.axes = new THREE.AxesHelper(1.6);
+        this.sphere.add(this.axes);
+        const sx = makeTextSprite('X'); sx.position.set(1.9,0,0); sx.scale.set(0.6,0.3,0.3); this.sphere.add(sx);
+        const sy = makeTextSprite('Y'); sy.position.set(0,1.9,0); sy.scale.set(0.6,0.3,0.3); this.sphere.add(sy);
+        const sz = makeTextSprite('Z'); sz.position.set(0,0,1.9); sz.scale.set(0.6,0.3,0.3); this.sphere.add(sz);
+        this._initInteraction();
+        this.slider.addEventListener('input', ()=>{ this.onSlider(); scheduleRecompute(); });
+        this.onSlider();
+        viewports.push(this);
+      }
+      _initInteraction(){
+        this.isDown = false; this.lastX = 0; this.lastY = 0; this.distance = this.camera.position.distanceTo(new THREE.Vector3(0,0,0)); this.canvas.style.touchAction = 'none';
+        this._onDown = (e)=>{ this.isDown = true; this.lastX = e.clientX; this.lastY = e.clientY; this.canvas.setPointerCapture && this.canvas.setPointerCapture(e.pointerId); };
+        this._onUp = (e)=>{ this.isDown = false; try{ this.canvas.releasePointerCapture && this.canvas.releasePointerCapture(e.pointerId); } catch(e){} };
+        this._onMove = (e)=>{ if(!this.isDown) return; const dx = (e.clientX - this.lastX); const dy = (e.clientY - this.lastY); this.lastX = e.clientX; this.lastY = e.clientY; this._applyDragRotation(dx, dy); };
+        this._onWheel = (e)=>{ e.preventDefault(); const delta = e.deltaY * 0.01; this._applyZoom(delta); };
+        this.canvas.addEventListener('pointerdown', this._onDown); window.addEventListener('pointerup', this._onUp); window.addEventListener('pointermove', this._onMove); this.canvas.addEventListener('wheel', this._onWheel, { passive:false });
+      }
+      _applyDragRotation(dx, dy){
+        const angY = dx * 0.008; const angX = dy * 0.008; const axisY = new THREE.Vector3().copy(this.camera.up).normalize(); const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir); const axisRight = new THREE.Vector3().crossVectors(dir, this.camera.up).normalize();
+        const q1 = new THREE.Quaternion().setFromAxisAngle(axisY, angY); const q2 = new THREE.Quaternion().setFromAxisAngle(axisRight, angX); const qCombined = new THREE.Quaternion().multiplyQuaternions(q2, q1);
+        this.sphere.quaternion.premultiply(q1); this.sphere.quaternion.premultiply(q2);
+        if (cameraLock) { for (const vp of viewports) { if (vp === this) continue; vp.sphere.quaternion.premultiply(qCombined); } }
+      }
+      _applyZoom(delta){ this.distance += delta; this.distance = Math.max(this.minDistance, Math.min(this.maxDistance, this.distance)); const dir = new THREE.Vector3(); this.camera.getWorldDirection(dir); const newPos = dir.multiplyScalar(-this.distance); this.camera.position.copy(newPos); this.camera.lookAt(0,0,0); if (cameraLock) { for (const vp of viewports) { if (vp === this) continue; vp.distance = vp.distance + delta; vp.distance = Math.max(vp.minDistance, Math.min(vp.maxDistance, vp.distance)); const dir2 = new THREE.Vector3(); vp.camera.getWorldDirection(dir2); const newPos2 = dir2.multiplyScalar(-vp.distance); vp.camera.position.copy(newPos2); vp.camera.lookAt(0,0,0); } } }
+      onSlider(){ const deg = Number(this.slider.value); this.val.textContent = deg + '°'; }
+      setSize(w,h){ if(w <= 0 || h <= 0) return; this.camera.aspect = w/h; this.camera.updateProjectionMatrix(); this.renderer.setSize(w,h, true); }
+      render(){ const q = new THREE.Quaternion(); this.sphere.getWorldQuaternion(q); const axis = new THREE.Vector3(0,1,0).applyQuaternion(q).normalize(); this.material.uniforms.maskAxis.value.copy(axis); this.renderer.render(this.scene, this.camera); }
+      // Return the mask axis in the sphere's local frame (no texture rotation present in this build)
+      getMaskAxisLocal(){ return { x: 0, y: 1, z: 0 }; }
+      resetView(){ this.sphere.quaternion.identity(); this.camera.position.set(0,0,3.2); this.distance = this.camera.position.distanceTo(new THREE.Vector3(0,0,0)); this.camera.lookAt(0,0,0); }
+      dispose(){ try{ this.canvas.removeEventListener('pointerdown', this._onDown); } catch(e){} }
+    }
+
+    const canvasL = document.getElementById('canvasLeft');
+    const canvasR = document.getElementById('canvasRight');
+    const sliderL = document.getElementById('sliderLeft');
+    const sliderR = document.getElementById('sliderRight');
+    const inputL = document.getElementById('inputLeft');
+    const inputR = document.getElementById('inputRight');
+    const valL = document.getElementById('valLeft');
+    const valR = document.getElementById('valRight');
+    const sharedSlider = document.getElementById('sharedSlider');
+    const inputShared = document.getElementById('inputShared');
+    const sharedVal = document.getElementById('sharedVal');
+    const thetaSlider = document.getElementById('thetaSlider');
+    const inputTheta = document.getElementById('inputTheta');
+    const thetaVal = document.getElementById('thetaVal');
+    const angleAB = document.getElementById('angleAB');
+    const rawPhases = document.getElementById('rawPhases');
+    const qmCorr = document.getElementById('qmCorr');
+    const overlapSame = document.getElementById('overlapSame');
+    const overlapOpp = document.getElementById('overlapOpp');
+    const avgOverlapSame = document.getElementById('avgOverlapSame');
+    const avgOverlapOpp = document.getElementById('avgOverlapOpp');
+    const correlationEl = document.getElementById('correlation');
+    const aliceRedEl = document.getElementById('aliceRed');
+    const aliceBlueEl = document.getElementById('aliceBlue');
+    const bobRedEl = document.getElementById('bobRed');
+    const bobBlueEl = document.getElementById('bobBlue');
+    const aliceInvalidEl = document.getElementById('aliceInvalid');
+    const bobInvalidEl = document.getElementById('bobInvalid');
+    const lockBtn = document.getElementById('lockViewBtn');
+    const resetBtn = document.getElementById('resetCamerasBtn');
+    const resetAllBtn = document.getElementById('resetAllBtn');
+    const colorBtn = document.getElementById('colorBtn');
+    const startSimBtn = document.getElementById('startSimBtn');
+    const simSamplesInput = document.getElementById('simSamples');
+    
+    const simProgress = document.getElementById('simProgress');
+
+    const leftView = new Viewport(canvasL, sliderL, valL, { invert: true });
+    const rightView = new Viewport(canvasR, sliderR, valR, { invert: false });
+
+    function degToRad(d){ return d * Math.PI / 180; }
+
+    function colorFromLat(latDeg, phaseDeg, thetaDeg, invert){
+      const f = 0;
+      const redLen = 180 + f;
+      const per = 360;
+      let u = latDeg - (phaseDeg + f);
+      u = ((u % per) + per) % per;
+
+      const thetaRad = thetaDeg * Math.PI / 180.0;
+      const greyThreshold = 0.5 * Math.pow(Math.sin(thetaRad), 2.0);
+
+      const dStart = Math.min(u, per - u);
+      const dEnd = Math.min(Math.abs(u - redLen), per - Math.abs(u - redLen));
+      const alphaStart = dStart * Math.PI / 180.0;
+      const alphaEnd = dEnd * Math.PI / 180.0;
+
+      if (Math.abs(Math.sin(alphaStart)) <= greyThreshold || Math.abs(Math.sin(alphaEnd)) <= greyThreshold) return 'grey';
+
+      let isRed;
+      if (redLen <= 0) isRed = false; else if (redLen >= per) isRed = true; else isRed = (u < redLen);
+      if (invert) return isRed ? 'blue' : 'red';
+      return isRed ? 'red' : 'blue';
+    }
+
+    function colorAtSample(sliderA, sliderB, thetaDeg, Ndot){
+      const latDeg = Math.asin(clamp(Ndot, -1, 1)) * 180 / Math.PI;
+      const ca = colorFromLat(latDeg, -sliderA, thetaDeg, leftView.invert);
+      const cb = colorFromLat(latDeg, -sliderB, thetaDeg, rightView.invert);
+      return { alice: ca, bob: cb };
+    }
+
+    function computeOverlapAreas(sliderA, sliderB, thetaDeg, steps=240){
+      const Nlat = steps; const dTheta = Math.PI / Nlat; let same = 0, opp = 0;
+      for (let i=0;i<Nlat;i++){
+        const theta = (i + 0.5) * dTheta; const sinTheta = Math.sin(theta); const Ndot = Math.cos(theta); const areaRing = sinTheta * dTheta * 2*Math.PI; const cols = colorAtSample(sliderA, sliderB, thetaDeg, Ndot);
+        const a = cols.alice, b = cols.bob;
+        if ((a === 'red' && b === 'red') || (a === 'blue' && b === 'blue')) same += areaRing;
+        else if ((a === 'red' && b === 'blue') || (a === 'blue' && b === 'red')) opp += areaRing;
+      }
+      return { same, opp };
+    }
+
+    function computeColorAreas(slider, thetaDeg, invertFlag, phaseOffset=0, samples=360){
+      const Nlat = samples; const dTheta = Math.PI / Nlat; let red=0, blue=0, grey=0;
+      for (let i=0;i<Nlat;i++){
+        const theta = (i + 0.5) * dTheta; const sinTheta = Math.sin(theta); const Ndot = Math.cos(theta); const areaRing = sinTheta * dTheta * 2*Math.PI; const latDeg = Math.asin(clamp(Ndot, -1, 1)) * 180 / Math.PI; const col = colorFromLat(latDeg, -slider + phaseOffset, thetaDeg, invertFlag);
+        if (col === 'red') red += areaRing; else if (col === 'blue') blue += areaRing; else grey += areaRing;
+      }
+      return { red, blue, grey };
+    }
+
+    function computeInvalidIntervals(slider, thetaDeg, invertFlag, samples=360){
+      // returns array of [startDeg,endDeg] measured as degrees from the NORTH POLE (0..180)
+      const N = samples; const intervals = [];
+      let inBlock = false; let blockMin = 999, blockMax = -999;
+      for (let i=0;i<N;i++){
+        // sample lat from +90 (north) to -90 (south)
+        const latDeg = 90 - (i + 0.5) * (180 / N);
+        const col = colorFromLat(latDeg, -slider, thetaDeg, invertFlag);
+        const angleFromNorth = 90 - latDeg; // 0 at north, 90 equator, 180 south
+        if (col === 'grey'){
+          inBlock = true;
+          blockMin = Math.min(blockMin, angleFromNorth);
+          blockMax = Math.max(blockMax, angleFromNorth);
+        } else {
+          if (inBlock){ intervals.push([blockMin, blockMax]); inBlock = false; blockMin = 999; blockMax = -999; }
+        }
+      }
+      if (inBlock) intervals.push([blockMin, blockMax]);
+      // normalize & round
+      const out = intervals.map(r=>[Math.max(0,Math.round(r[0])), Math.min(180,Math.round(r[1]))]);
+      return out;
+    }
+
+    function formatIntervals(arr){ if(!arr || arr.length===0) return 'none'; return arr.map(r=> `${r[0]}°–${r[1]}°`).join(', '); }
+
+    function formatPi(val){ const coeff = val / Math.PI; return coeff.toFixed(4).replace(/\.?0+$/,'') + 'π'; }
+
+    function computeAverageOverShared(sliderL, sliderR, thetaDeg){
+      const samples = 61; let sumSame = 0, sumOpp = 0;
+      for (let k=0;k<samples;k++){
+        const s = -180 + k * (360/(samples-1));
+        let Ls = mod(sliderL + s + 180, 360) - 180;
+        let Rs = mod(sliderR + s + 180, 360) - 180;
+        const r = computeOverlapAreas(Ls, Rs, thetaDeg, 120);
+        sumSame += r.same; sumOpp += r.opp;
+      }
+      return { same: sumSame / samples, opp: sumOpp / samples };
+    }
+
+    let overlapTimer = null;
+    function scheduleRecompute(){ if (overlapTimer) return; overlapTimer = setTimeout(()=>{ overlapTimer=null; recomputeNumeric(); }, 120); }
+
+    function recomputeNumeric(){
+      const L = Number(sliderL.value); const R = Number(sliderR.value); const theta = Number(thetaSlider.value);
+      const res = computeOverlapAreas(L, R, theta, 240);
+      overlapSame.textContent = formatPi(res.same);
+      overlapOpp.textContent = formatPi(res.opp);
+      const avg = computeAverageOverShared(L, R, theta);
+      avgOverlapSame.textContent = formatPi(avg.same);
+      avgOverlapOpp.textContent = formatPi(avg.opp);
+
+      const aliceAreas = computeColorAreas(L, theta, leftView.invert, 0, 360);
+      aliceRedEl.textContent = formatPi(aliceAreas.red); aliceBlueEl.textContent = formatPi(aliceAreas.blue);
+      const bobAreas = computeColorAreas(R, theta, rightView.invert, 0, 360);
+      bobRedEl.textContent = formatPi(bobAreas.red); bobBlueEl.textContent = formatPi(bobAreas.blue);
+
+      // invalid intervals
+      const aInv = computeInvalidIntervals(L, theta, leftView.invert, 360);
+      const bInv = computeInvalidIntervals(R, theta, rightView.invert, 360);
+      aliceInvalidEl.textContent = 'Invalid States: ' + formatIntervals(aInv);
+      bobInvalidEl.textContent = 'Invalid States: ' + formatIntervals(bInv);
+
+      correlationEl.textContent = '—';
+    }
+
+    function applyPhasesImmediate(){
+      const L = Number(sliderL.value); const R = Number(sliderR.value); const theta = Number(thetaSlider.value);
+      const diffDeg = Math.abs(mod((L - R + 180),360)-180);
+      angleAB.textContent = `∠AB = ${diffDeg.toFixed(0)}°`;
+      qmCorr.textContent = 'QM correlation: ' + (-Math.cos(diffDeg * Math.PI/180)).toFixed(4);
+
+      leftView.material.uniforms.phaseDeg.value = -L;
+      leftView.material.uniforms.thetaDeg.value = theta;
+      rightView.material.uniforms.phaseDeg.value = -R;
+      rightView.material.uniforms.thetaDeg.value = theta;
+
+      inputL.value = Math.round(L); inputR.value = Math.round(R); valL.textContent = L + '°'; valR.textContent = R + '°';
+      inputShared.value = sharedSlider.value; sharedVal.textContent = sharedSlider.value + '°';
+      inputTheta.value = Math.round(theta); thetaVal.textContent = theta + '°';
+
+      rawPhases.textContent = `Alice: ${L}° (shader ${-L}°) — Bob: ${R}° (shader ${-R}°)`;
+
+      updateMaterialsColors();
+      scheduleRecompute();
+    }
+
+    sharedSlider.addEventListener('input', ()=>{ const newVal = Number(sharedSlider.value); const delta = newVal - sharedPrev; if (delta !== 0){ let L = Number(sliderL.value) + delta; let R = Number(sliderR.value) + delta; L = mod(L+180,360)-180; R = mod(R+180,360)-180; sliderL.value = Math.round(L); sliderR.value = Math.round(R); } sharedPrev = newVal; inputShared.value = newVal; sharedVal.textContent = newVal + '°'; applyPhasesImmediate(); });
+
+    inputL.addEventListener('change', ()=>{ let v = Number(inputL.value); if(isNaN(v)) v=0; v = clamp(Math.round(v), -180, 180); sliderL.value = v; inputL.value = v; applyPhasesImmediate(); });
+    sliderL.addEventListener('input', ()=>{ inputL.value = sliderL.value; applyPhasesImmediate(); });
+    inputR.addEventListener('change', ()=>{ let v = Number(inputR.value); if(isNaN(v)) v=0; v = clamp(Math.round(v), -180, 180); sliderR.value = v; inputR.value = v; applyPhasesImmediate(); });
+    sliderR.addEventListener('input', ()=>{ inputR.value = sliderR.value; applyPhasesImmediate(); });
+    inputShared.addEventListener('change', ()=>{ let v = Number(inputShared.value); if(isNaN(v)) v=0; v = clamp(Math.round(v), -180, 180); sharedSlider.value = v; sharedSlider.dispatchEvent(new Event('input')); });
+
+    inputTheta.addEventListener('change', ()=>{ let v = Number(inputTheta.value); if(isNaN(v)) v=0; v = clamp(Math.round(v), 0, 180); thetaSlider.value = v; inputTheta.value = v; applyPhasesImmediate(); });
+    thetaSlider.addEventListener('input', ()=>{ inputTheta.value = thetaSlider.value; applyPhasesImmediate(); });
+
+    lockBtn.addEventListener('click', ()=>{ cameraLock = !cameraLock; lockBtn.classList.toggle('active', cameraLock); lockBtn.textContent = cameraLock ? 'Locked' : 'Lock views'; });
+    resetBtn.addEventListener('click', ()=>{ for(const vp of viewports) vp.resetView(); });
+    resetAllBtn.addEventListener('click', ()=>{ sliderL.value = 0; sliderR.value = 0; sharedSlider.value = 0; thetaSlider.value = 0; inputL.value = inputR.value = inputShared.value = inputTheta.value = 0; sharedPrev = Number(sharedSlider.value); applyPhasesImmediate(); });
+
+    function openColorModal(){
+      const modal = document.createElement('div'); modal.className='modal'; const inner = document.createElement('div'); inner.className='modal-inner'; inner.innerHTML = `<div style="font-weight:600">Choose colors</div>`;
+      const row1 = document.createElement('div'); row1.className='row'; const redLabel = document.createElement('div'); redLabel.textContent='Red:'; const redInput = document.createElement('input'); redInput.type='color'; redInput.value=colorRed; row1.appendChild(redLabel); row1.appendChild(redInput);
+      const row2 = document.createElement('div'); row2.className='row'; const blueLabel = document.createElement('div'); blueLabel.textContent='Blue:'; const blueInput = document.createElement('input'); blueInput.type='color'; blueInput.value=colorBlue; row2.appendChild(blueLabel); row2.appendChild(blueInput);
+      const row3 = document.createElement('div'); row3.className='row'; const greyLabel = document.createElement('div'); greyLabel.textContent='Grey:'; const greyInput = document.createElement('input'); greyInput.type='color'; greyInput.value=colorGrey; row3.appendChild(greyLabel); row3.appendChild(greyInput);
+      const btnRow = document.createElement('div'); btnRow.className='row'; btnRow.style.justifyContent='flex-end'; const resetDefault = document.createElement('button'); resetDefault.textContent='Set to default'; resetDefault.className='lock-btn'; const apply = document.createElement('button'); apply.textContent='Apply'; apply.className='lock-btn'; const cancel = document.createElement('button'); cancel.textContent='Cancel'; cancel.className='lock-btn'; btnRow.appendChild(resetDefault); btnRow.appendChild(cancel); btnRow.appendChild(apply);
+      inner.appendChild(row1); inner.appendChild(row2); inner.appendChild(row3); inner.appendChild(btnRow); modal.appendChild(inner); document.body.appendChild(modal);
+      resetDefault.addEventListener('click', ()=>{ redInput.value='#ff3b3b'; blueInput.value='#3b7fff'; greyInput.value='#888888'; });
+      cancel.addEventListener('click', ()=>{ document.body.removeChild(modal); });
+      apply.addEventListener('click', ()=>{ colorRed = redInput.value; colorBlue = blueInput.value; colorGrey = greyInput.value; updateMaterialsColors(); recomputeNumeric(); document.body.removeChild(modal); });
+    }
+    colorBtn.addEventListener('click', openColorModal);
+
+// hook the info button: build a minimal, safe modal when clicked
+function openSimpleInfoModal(){
+  // avoid multiple modals
+  if(document.getElementById('simpleInfoModal')) return;
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.id = 'simpleInfoModal';
+
+  const inner = document.createElement('div');
+  inner.className = 'modal-inner';
+  inner.style.maxHeight = '70vh';
+  inner.style.overflow = 'auto';
+  inner.style.width = '420px';
+
+  const title = document.createElement('div');
+  title.style.fontWeight = '600';
+  title.style.marginBottom = '6px';
+  title.textContent = 'Simulation Info';
+  inner.appendChild(title);
+
+  const p1 = document.createElement('div');
+  p1.style.fontSize = '13px';
+  p1.style.marginBottom = '6px';
+  p1.textContent = 'Overview: Two spheres (Alice & Bob) show banded outcomes: red=+1, blue=-1. Grey indicates excluded states.';
+  inner.appendChild(p1);
+
+  const p2 = document.createElement('div');
+  p2.style.fontSize = '13px';
+  p2.style.marginBottom = '6px';
+  p2.textContent = "Alice's Angle / Bob's Angle: rotate measurement direction; texture flow visualizes how the hidden-spin fiber maps to outcomes.";
+  inner.appendChild(p2);
+
+  const p3 = document.createElement('div');
+  p3.style.fontSize = '13px';
+  p3.style.marginBottom = '6px';
+  p3.textContent = `Tomographic origin of the grey-band (threshold) functions:
+
+The grey bands do not represent detector inefficiency, randomness,
+or post-selection. They arise from geometry.
+
+The hidden variable lives in a higher-dimensional spinorial space
+(S3). Measurement outcomes are obtained by projecting this space
+onto ordinary directions on S2. This projection is smooth but not
+one-to-one.
+
+1) Density of states:
+
+The hidden states are assumed to be uniformly distributed on S3.
+When this uniform measure is expressed in terms of the angle alpha
+between a measurement direction "a" and a hidden spin direction "s",
+the induced density on that angle is proportional to
+
+    |cos(alpha)|
+
+This factor is a Jacobian coming from the geometry of the projection,
+not a dynamical assumption.
+
+2) Integrating out the hidden fiber:
+
+The S3 -> S2 projection involves an internal fiber coordinate
+(Hopf fiber). Integrating the |cos(alpha)| density over this internal
+coordinate produces a cumulative weight proportional to
+
+    (1/2) * sin(alpha)
+
+Integrated over the full domain, this yields a constant total weight
+of 1/2. This is the origin of the sine-based threshold function used
+in the code.
+
+3) Why a threshold is needed:
+
+Because the projection from S3 to S2 is many-to-one, certain regions
+on S2 correspond to multiple incompatible points in S3. In those
+regions, the inverse map does not exist.
+
+Instead of renormalizing probabilities, these regions are excluded.
+The exclusion condition is written as an inequality involving the
+sine of the angular distance from a color boundary. Points satisfying
+this inequality are marked as "grey".
+
+These grey points are not uncertain outcomes. They are coordinate
+artifacts created by slicing S3 with a fixed tomographic parameter.
+
+4) Relation to alternative threshold functions:
+
+Other threshold functions (such as those derived from Fine's work)
+encode the same obstruction using a different coordinate along the
+hidden fiber. Although the functional form differs, the meaning is
+the same: the threshold marks where the projection ceases to be
+invertible.
+
+5) Why averaging over theta is required:
+
+Each value of theta defines a different tomographic slice of the same
+underlying S3 space. No single slice covers the whole space without
+singularities. Averaging over theta restores rotational invariance
+and removes slice-dependent artifacts.`;
+  inner.appendChild(p3);
+
+  const p4 = document.createElement('div');
+  p4.style.fontSize = '13px';
+  p4.style.marginBottom = '6px';
+  p4.textContent = 'Sampling: directions are drawn uniformly (not by naive coordinates). Theta is also sampled uniformly across trials.';
+  inner.appendChild(p4);
+
+  const foot = document.createElement('div');
+  foot.style.fontSize = '12px';
+  foot.style.color = '#9fb0c9';
+  foot.style.marginTop = '8px';
+  foot.textContent = 'created by Sandra, 2026';
+  inner.appendChild(foot);
+
+  const close = document.createElement('button');
+  close.className = 'lock-btn';
+  close.textContent = 'Close [X]';
+  close.style.marginTop = '10px';
+  close.addEventListener('click', () => {
+    document.body.removeChild(modal);
+  });
+  inner.appendChild(close);
+
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
+}
+
+    try{ const infoBtn = document.getElementById('infoBtn'); if(infoBtn) infoBtn.addEventListener('click', openSimpleInfoModal); }catch(e){}
+
+    function updateMaterialsColors(){
+      leftView.material.uniforms.colorA.value.set(colorBlue);
+      leftView.material.uniforms.colorB.value.set(colorRed);
+      leftView.material.uniforms.greyColor.value.set(new THREE.Color(colorGrey));
+      rightView.material.uniforms.colorA.value.set(colorRed);
+      rightView.material.uniforms.colorB.value.set(colorBlue);
+      rightView.material.uniforms.greyColor.value.set(new THREE.Color(colorGrey));
+    }
+
+    function resize(){ const rectL=canvasL.parentElement.getBoundingClientRect(); const rectR=canvasR.parentElement.getBoundingClientRect(); leftView.setSize(Math.floor(rectL.width), Math.floor(rectL.height)); rightView.setSize(Math.floor(rectR.width), Math.floor(rectR.height)); }
+    window.addEventListener('resize', resize); resize(); setTimeout(resize,50);
+
+    (function animate(){ requestAnimationFrame(animate); leftView.render(); rightView.render(); })();
+
+    sliderL.addEventListener('input', ()=>{ applyPhasesImmediate(); });
+    sliderR.addEventListener('input', ()=>{ applyPhasesImmediate(); });
+
+    sharedPrev = Number(sharedSlider.value);
+    applyPhasesImmediate();
+
+    window.addEventListener('keydown', (ev)=>{ const active = document.activeElement; if (active && (active.tagName === 'INPUT' || active.isContentEditable)) return; if(ev.key === '0'){ sliderL.value=0; sliderR.value=0; inputL.value=0; inputR.value=0; inputShared.value=0; inputTheta.value=0; applyPhasesImmediate(); } });
+
+    // ---------------- Simulation ----------------
+    async function startSimulation(samples = 100000){
+      simProgress.textContent = 'Preparing...';
+      startSimBtn.disabled = true;
+      const L = Number(sliderL.value);
+      const R = Number(sliderR.value);
+
+      // Monte-Carlo: draw exactly `samples` independent trials where theta (polar) is uniform in [0, PI]
+      let accepted = 0;
+      let sumProducts = 0;
+      const reportInterval = Math.max(1, Math.floor(samples / 100));
+      for (let t = 0; t < samples; t++){
+        // theta uniform 0..PI
+        const theta = Math.random() * Math.PI;
+        const phi = Math.random() * 2 * Math.PI;
+        const Nx = Math.sin(theta) * Math.cos(phi);
+        const Ny = Math.cos(theta);
+        const Nz = Math.sin(theta) * Math.sin(phi);
+        const latDeg = Math.asin(clamp(Ny, -1, 1)) * 180 / Math.PI;
+        const thetaRand = Math.random() * 180;
+
+        const ca = colorFromLat(latDeg, -L, thetaRand, leftView.invert);
+        const cb = colorFromLat(latDeg, -R, thetaRand, rightView.invert);
+        if (ca === 'grey' || cb === 'grey') continue;
+        const aVal = (ca === 'red') ? 1 : -1;
+        const bVal = (cb === 'red') ? 1 : -1;
+        sumProducts += (aVal * bVal);
+        accepted++;
+        if ((t & 1023) === 0){ simProgress.textContent = `Simulating... ${t}/${samples}`; await new Promise(r=>setTimeout(r,0)); }
+      }
+
+      if (accepted === 0){ correlationEl.textContent = 'N/A'; simProgress.textContent = 'No accepted samples (all grey?)'; }
+      else { const corr = sumProducts / accepted; correlationEl.textContent = corr.toFixed(4); simProgress.textContent = `Done — accepted ${accepted}/${samples}`; }
+      startSimBtn.disabled = false;
+    }
+
+    let simRunning = false;
+    async function startSimClickHandler(){
+      if (simRunning) { console.log('startSimClickHandler: already running, ignoring'); return; }
+      simRunning = true;
+      try{
+        console.log('startSimClickHandler fired');
+        simProgress.textContent = 'Starting simulation...';
+        startSimBtn.disabled = true;
+        let samples = Number(simSamplesInput && simSamplesInput.value ? Number(simSamplesInput.value) : 100000);
+        if (!isFinite(samples) || samples <= 0) samples = 100000;
+        samples = Math.max(1, Math.floor(samples));
+        await startSimulation(samples);
+      } catch(err){
+        console.error(err);
+        simProgress.textContent = 'Simulation error: ' + (err && err.message ? err.message : String(err));
+      } finally{
+        startSimBtn.disabled = false;
+        simRunning = false;
+      }
+    }
+
+    try{ if (startSimBtn && startSimBtn.addEventListener) startSimBtn.addEventListener('click', startSimClickHandler); } catch(err){ console.error('direct bind err', err); }
+
+  </script>
+</body>
+</html>

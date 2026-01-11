@@ -101,6 +101,19 @@
         <input id="inputTheta" type="number" step="1" value="0">
         <div class="small">Adds a grey band around demarcations.</div>
       </div>
+      <div style="height:6px"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="label">Theta method</div>
+        <select id="thetaMethodSelect">
+          <option value="Jacobian" selected>Jacobian</option>
+          <option value="Fine">Fine</option>
+        </select>
+        <div style="width:12px"></div>
+        <div id="metricContainer" style="display:flex;align-items:center;gap:6px">
+          <div class="small">Metric</div>
+          <input id="metricInput" type="number" step="0.01" value="0.5" style="width:80px;padding:4px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:#07202a;color:#e6eef8">
+        </div>
+      </div>
 
     </div>
 
@@ -113,8 +126,7 @@
       <div style="display:flex;gap:8px;align-items:center">
         <button id="startSimBtn" class="lock-btn" title="Run Monte Carlo simulation">Start Simulation</button>
         <input id="simSamples" type="number" min="1" step="1" value="100000" style="width:120px;background:#07202a;color:#dbe7f7;border-radius:6px;border:1px solid rgba(255,255,255,0.06);padding:6px">
-        
-        
+        <label style="display:flex;align-items:center;gap:6px;margin-left:6px"><input id="fixedThetaCheckbox" type="checkbox"><span class="small">Fix θ</span></label>
       </div>
       <button id="colorBtn" class="color-btn" title="Change red/blue/grey colors">Change colors</button>
       <div class="small">When locked, rotating/zooming one view applies same change to the other.</div>
@@ -123,7 +135,7 @@
     <div style="flex:1"></div>
 
     <div class="data-tab">
-      <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-weight:600">Data</div><button id="infoBtn" class="lock-btn" title="Info">?</button></div> 
+      <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-weight:600">Data</div><button id="infoBtn" class="lock-btn" title="Info">?</button></div>
       <div id="angleAB">∠AB = 0°</div>
       <div id="qmCorr" class="small" style="margin-top:6px">QM correlation: 0</div>
       <div style="margin-top:8px">Area overlap (++/--): <span id="overlapSame">0π</span></div>
@@ -164,6 +176,8 @@
       uniform vec3 maskAxis;
       uniform float phaseDeg; // degrees (negated by JS)
       uniform float thetaDeg; // degrees, 0..180
+      uniform float metricPref; // prefactor for Jacobian method
+      uniform float methodFlag; // 0.0 = Jacobian, 1.0 = Fine
       uniform vec3 lightDir;
       const float PI = 3.141592653589793;
 
@@ -181,7 +195,17 @@
         float per = 360.0;
 
         float thetaRad = thetaDeg * PI / 180.0;
-        float greyThreshold = 0.5 * pow(sin(thetaRad), 2.0);
+
+        float greyThreshold = 0.0;
+        if (methodFlag < 0.5) {
+          // Jacobian method
+          greyThreshold = metricPref * pow(sin(thetaRad), 2.0);
+        } else {
+          // Fine method: invert mapping so theta=180 => threshold 1
+          float x = 1.0 - (thetaDeg / 180.0);
+          float val = -1.0 + 2.0 / sqrt(1.0 + 3.0 * x);
+          greyThreshold = max(0.0, val);
+        }
 
         float u = latDeg - (phaseDeg + f);
         float s = posmod(u + per*1000.0, per);
@@ -230,6 +254,8 @@
           maskAxis: { value: new THREE.Vector3(0,1,0) },
           phaseDeg: { value: 0.0 },
           thetaDeg: { value: 0.0 },
+          metricPref: { value: 0.5 },
+          methodFlag: { value: 0.0 },
           lightDir: { value: new THREE.Vector3(1,1,0.5).normalize() }
         }
       });
@@ -315,6 +341,9 @@
     const thetaSlider = document.getElementById('thetaSlider');
     const inputTheta = document.getElementById('inputTheta');
     const thetaVal = document.getElementById('thetaVal');
+    const thetaMethodSelect = document.getElementById('thetaMethodSelect');
+    const metricInput = document.getElementById('metricInput');
+
     const angleAB = document.getElementById('angleAB');
     const rawPhases = document.getElementById('rawPhases');
     const qmCorr = document.getElementById('qmCorr');
@@ -335,6 +364,7 @@
     const colorBtn = document.getElementById('colorBtn');
     const startSimBtn = document.getElementById('startSimBtn');
     const simSamplesInput = document.getElementById('simSamples');
+    const fixedThetaCheckbox = document.getElementById('fixedThetaCheckbox');
     
     const simProgress = document.getElementById('simProgress');
 
@@ -343,6 +373,23 @@
 
     function degToRad(d){ return d * Math.PI / 180; }
 
+    function getGreyThresholdJS(thetaDeg){
+      // unified JS threshold used for CPU sampling and numeric areas
+      if (!thetaMethodSelect) return 0.5 * Math.pow(Math.sin(thetaDeg * Math.PI / 180), 2);
+      const method = thetaMethodSelect.value;
+      const thetaRad = thetaDeg * Math.PI / 180;
+      if (method === 'Jacobian'){
+        let metric = 0.5;
+        if (metricInput){ const m = parseFloat(metricInput.value); if (Number.isFinite(m)) metric = m; }
+        return metric * Math.pow(Math.sin(thetaRad), 2.0);
+      } else {
+        // Fine mapping: invert so theta=180 => threshold 1
+        const x = 1 - (thetaDeg / 180.0);
+        const val = -1 + 2.0 / Math.sqrt(1.0 + 3.0 * x);
+        return Math.max(0, val);
+      }
+    }
+
     function colorFromLat(latDeg, phaseDeg, thetaDeg, invert){
       const f = 0;
       const redLen = 180 + f;
@@ -350,8 +397,7 @@
       let u = latDeg - (phaseDeg + f);
       u = ((u % per) + per) % per;
 
-      const thetaRad = thetaDeg * Math.PI / 180.0;
-      const greyThreshold = 0.5 * Math.pow(Math.sin(thetaRad), 2.0);
+      const greyThreshold = getGreyThresholdJS(thetaDeg);
 
       const dStart = Math.min(u, per - u);
       const dEnd = Math.min(Math.abs(u - redLen), per - Math.abs(u - redLen));
@@ -470,8 +516,7 @@
       rightView.material.uniforms.thetaDeg.value = theta;
 
       inputL.value = Math.round(L); inputR.value = Math.round(R); valL.textContent = L + '°'; valR.textContent = R + '°';
-      inputShared.value = sharedSlider.value; sharedVal.textContent = sharedSlider.value + '°';
-      inputTheta.value = Math.round(theta); thetaVal.textContent = theta + '°';
+      inputShared.value = sharedSlider.value; sharedVal.textContent = sharedSlider.value + '°'; inputTheta.value = Math.round(theta); thetaVal.textContent = theta + '°';
 
       rawPhases.textContent = `Alice: ${L}° (shader ${-L}°) — Bob: ${R}° (shader ${-R}°)`;
 
@@ -507,7 +552,7 @@
     }
     colorBtn.addEventListener('click', openColorModal);
 
-// hook the info button: build a minimal, safe modal when clicked
+  // hook the info button: build a minimal, safe modal when clicked
 function openSimpleInfoModal(){
   // avoid multiple modals
   if(document.getElementById('simpleInfoModal')) return;
@@ -551,9 +596,14 @@ or post-selection. They arise from geometry.
 The hidden variable lives in a higher-dimensional spinorial space
 (S3). Measurement outcomes are obtained by projecting this space
 onto ordinary directions on S2. This projection is smooth but not
-one-to-one.
+one-to-one.`;
+  inner.appendChild(p3);
 
-1) Density of states:
+
+const p4 = document.createElement('div');
+  p4.style.fontSize = '13px';
+  p4.style.marginBottom = '6px';
+  p4.textContent = `1) Density of states:
 
 The hidden states are assumed to be uniformly distributed on S3.
 When this uniform measure is expressed in terms of the angle alpha
@@ -563,21 +613,39 @@ the induced density on that angle is proportional to
     |cos(alpha)|
 
 This factor is a Jacobian coming from the geometry of the projection,
-not a dynamical assumption.
+not a dynamical assumption.`;
+  inner.appendChild(p4);
 
-2) Integrating out the hidden fiber:
+
+const p5 = document.createElement('div');
+  p5.style.fontSize = '13px';
+  p5.style.marginBottom = '6px';
+  p5.textContent = `2) Integrating out the hidden fiber:
 
 The S3 -> S2 projection involves an internal fiber coordinate
-(Hopf fiber). Integrating the |cos(alpha)| density over this internal
-coordinate produces a cumulative weight proportional to
+(Hopf fiber). Integrating the |cos(alpha)| density over S2 produces 
+a cumulative weight proportional to 
 
-    (1/2) * sin(alpha)
+    (1/2) * sin^2(alpha). 
 
-Integrated over the full domain, this yields a constant total weight
+Integrating over the internal coordinate (0-PI), this yields a constant total weight
 of 1/2. This is the origin of the sine-based threshold function used
-in the code.
+in the code for the simulation using the method "Jacobian".`;
+  inner.appendChild(p5);
 
-3) Why a threshold is needed:
+
+const p6 = document.createElement('div');
+  p6.style.fontSize = '13px';
+  p6.style.marginBottom = '6px';
+  p6.textContent = `Geometrically: small changes in alpha sweep out a 3-sphere volume that is proportional to |cos alpha|; the fiber (internal) measure over the remaining coordinates depends on alpha, so when you integrate out the fiber you pick up that factor.
+In practice, when one writes a threshold in terms of alpha they are implicitly working with the pushed-forward weight coming from the S3 measure. The Jacobian |cos alpha| explains why the distribution of events as a function of alpha is non-uniform.`;
+  inner.appendChild(p6);
+
+
+const p7 = document.createElement('div');
+  p7.style.fontSize = '13px';
+  p7.style.marginBottom = '6px';
+  p7.textContent = `3) Why a threshold is needed:
 
 Because the projection from S3 to S2 is many-to-one, certain regions
 on S2 correspond to multiple incompatible points in S3. In those
@@ -589,29 +657,41 @@ sine of the angular distance from a color boundary. Points satisfying
 this inequality are marked as "grey".
 
 These grey points are not uncertain outcomes. They are coordinate
-artifacts created by slicing S3 with a fixed tomographic parameter.
+artifacts created by slicing S3 with a fixed tomographic parameter.`;
+  inner.appendChild(p7);
 
-4) Relation to alternative threshold functions:
 
-Other threshold functions (such as those derived from Fine's work)
-encode the same obstruction using a different coordinate along the
+const p8 = document.createElement('div');
+  p8.style.fontSize = '13px';
+  p8.style.marginBottom = '6px';
+  p8.textContent = `4) Relation to alternative threshold functions:
+
+The other threshold function, derived from from Fine's work, 
+g(u,v,s) > -1 + 2/(sqrt(1+3(s/PI))), 
+encodes the same obstruction using a different coordinate along the
 hidden fiber. Although the functional form differs, the meaning is
 the same: the threshold marks where the projection ceases to be
-invertible.
+invertible. You can use this function in the simulation by selecting 
+"Fine" in the dropdown menu.`;
+  inner.appendChild(p8);
 
-5) Why averaging over theta is required:
+
+const p9 = document.createElement('div');
+  p9.style.fontSize = '13px';
+  p9.style.marginBottom = '6px';
+  p9.textContent = `5) Why averaging over theta is required:
 
 Each value of theta defines a different tomographic slice of the same
 underlying S3 space. No single slice covers the whole space without
 singularities. Averaging over theta restores rotational invariance
 and removes slice-dependent artifacts.`;
-  inner.appendChild(p3);
+  inner.appendChild(p9);
 
-  const p4 = document.createElement('div');
-  p4.style.fontSize = '13px';
-  p4.style.marginBottom = '6px';
-  p4.textContent = 'Sampling: directions are drawn uniformly (not by naive coordinates). Theta is also sampled uniformly across trials.';
-  inner.appendChild(p4);
+  const p10 = document.createElement('div');
+  p10.style.fontSize = '13px';
+  p10.style.marginBottom = '6px';
+  p10.textContent = "Simulation notes: sampling directions are drawn uniformly, with the same choices for both spheres. Theta is also sampled uniformly across trials, unless Fix Theta is checked: then, the simulation will use the currently selected value of the Theta slider. Checking this box makes the resulting correlation proportional to the overlap of the displayed areas on the spheres, normalized to remove the grey areas as unphysical. Using this checkbox also allows one to theoretically obtain PRBOX correlations by setting the Metric of the Jacobian to higher values (the gist of it is that the resulting red and blue bands are always antipodal and no pair of settings allows anticorrelated and correlated overlaps at the same time). Setting the metric to 0 (without fixing theta) allows one to obtain correlations in R3, like in Bell's toy models.";
+  inner.appendChild(p10);
 
   const foot = document.createElement('div');
   foot.style.fontSize = '12px';
@@ -642,6 +722,14 @@ and removes slice-dependent artifacts.`;
       rightView.material.uniforms.colorA.value.set(colorRed);
       rightView.material.uniforms.colorB.value.set(colorBlue);
       rightView.material.uniforms.greyColor.value.set(new THREE.Color(colorGrey));
+      // update metric and method for both materials
+      const methodFlagVal = (typeof thetaMethodSelect !== 'undefined' && thetaMethodSelect && thetaMethodSelect.value === 'Fine') ? 1.0 : 0.0;
+      let metricVal = 0.5;
+      if (typeof metricInput !== 'undefined' && metricInput){ const m = parseFloat(metricInput.value); if (Number.isFinite(m)) metricVal = m; }
+      if (leftView.material.uniforms.metricPref) leftView.material.uniforms.metricPref.value = metricVal;
+      if (leftView.material.uniforms.methodFlag) leftView.material.uniforms.methodFlag.value = methodFlagVal;
+      if (rightView.material.uniforms.metricPref) rightView.material.uniforms.metricPref.value = metricVal;
+      if (rightView.material.uniforms.methodFlag) rightView.material.uniforms.methodFlag.value = methodFlagVal;
     }
 
     function resize(){ const rectL=canvasL.parentElement.getBoundingClientRect(); const rectR=canvasR.parentElement.getBoundingClientRect(); leftView.setSize(Math.floor(rectL.width), Math.floor(rectL.height)); rightView.setSize(Math.floor(rectR.width), Math.floor(rectR.height)); }
@@ -676,7 +764,13 @@ and removes slice-dependent artifacts.`;
         const Ny = Math.cos(theta);
         const Nz = Math.sin(theta) * Math.sin(phi);
         const latDeg = Math.asin(clamp(Ny, -1, 1)) * 180 / Math.PI;
-        const thetaRand = Math.random() * 180;
+        let thetaRand;
+        const useFixedTheta = (typeof fixedThetaCheckbox !== 'undefined' && fixedThetaCheckbox && fixedThetaCheckbox.checked);
+        if (useFixedTheta) {
+          thetaRand = Number(thetaSlider.value);
+        } else {
+          thetaRand = Math.random() * 180;
+        }
 
         const ca = colorFromLat(latDeg, -L, thetaRand, leftView.invert);
         const cb = colorFromLat(latDeg, -R, thetaRand, rightView.invert);
@@ -701,20 +795,26 @@ and removes slice-dependent artifacts.`;
         console.log('startSimClickHandler fired');
         simProgress.textContent = 'Starting simulation...';
         startSimBtn.disabled = true;
-        let samples = Number(simSamplesInput && simSamplesInput.value ? Number(simSamplesInput.value) : 100000);
-        if (!isFinite(samples) || samples <= 0) samples = 100000;
-        samples = Math.max(1, Math.floor(samples));
+        const samples = Number(simSamplesInput.value) || 100000;
         await startSimulation(samples);
-      } catch(err){
+      }catch(err){
         console.error(err);
-        simProgress.textContent = 'Simulation error: ' + (err && err.message ? err.message : String(err));
-      } finally{
-        startSimBtn.disabled = false;
+        simProgress.textContent = 'Simulation error';
+      }finally{
         simRunning = false;
+        startSimBtn.disabled = false;
       }
     }
+    startSimBtn.addEventListener('click', startSimClickHandler);
 
-    try{ if (startSimBtn && startSimBtn.addEventListener) startSimBtn.addEventListener('click', startSimClickHandler); } catch(err){ console.error('direct bind err', err); }
+     // toggle metric UI and hook changes
+    try{
+      const metricContainer = document.getElementById('metricContainer');
+      function updateMetricVisibility(){ if(thetaMethodSelect && thetaMethodSelect.value === 'Jacobian'){ metricContainer.style.display = 'flex'; } else { metricContainer.style.display = 'none'; } }
+      if (thetaMethodSelect) thetaMethodSelect.addEventListener('change', ()=>{ updateMetricVisibility(); updateMaterialsColors(); applyPhasesImmediate(); });
+      if (metricInput) metricInput.addEventListener('change', ()=>{ updateMaterialsColors(); applyPhasesImmediate(); });
+      updateMetricVisibility();
+    }catch(e){ console.warn('metric UI init failed', e); }
 
   </script>
 </body>

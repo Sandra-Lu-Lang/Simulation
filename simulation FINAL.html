@@ -106,7 +106,7 @@
         <div class="label">Theta method</div>
         <select id="thetaMethodSelect">
           <option value="Jacobian" selected>Jacobian</option>
-          <option value="Fine">Fine</option>
+          <option value="Pearle">Pearle</option>
         </select>
         <div style="width:12px"></div>
         <div id="metricContainer" style="display:flex;align-items:center;gap:6px">
@@ -177,7 +177,7 @@
       uniform float phaseDeg; // degrees (negated by JS)
       uniform float thetaDeg; // degrees, 0..180
       uniform float metricPref; // prefactor for Jacobian method
-      uniform float methodFlag; // 0.0 = Jacobian, 1.0 = Fine
+      uniform float methodFlag; // 0.0 = Jacobian, 1.0 = Pearle
       uniform vec3 lightDir;
       const float PI = 3.141592653589793;
 
@@ -201,7 +201,7 @@
           // Jacobian method
           greyThreshold = metricPref * pow(sin(thetaRad), 2.0);
         } else {
-          // Fine method: invert mapping so theta=180 => threshold 1
+          // Pearle method: invert mapping so theta=180 => threshold 1
           float x = 1.0 - (thetaDeg / 180.0);
           float val = -1.0 + 2.0 / sqrt(1.0 + 3.0 * x);
           greyThreshold = max(0.0, val);
@@ -383,7 +383,7 @@
         if (metricInput){ const m = parseFloat(metricInput.value); if (Number.isFinite(m)) metric = m; }
         return metric * Math.pow(Math.sin(thetaRad), 2.0);
       } else {
-        // Fine mapping: invert so theta=180 => threshold 1
+        // Pearle mapping: invert so theta=180 => threshold 1
         const x = 1 - (thetaDeg / 180.0);
         const val = -1 + 2.0 / Math.sqrt(1.0 + 3.0 * x);
         return Math.max(0, val);
@@ -666,13 +666,13 @@ const p8 = document.createElement('div');
   p8.style.marginBottom = '6px';
   p8.textContent = `4) Relation to alternative threshold functions:
 
-The other threshold function, derived from from Fine's work, 
+The other threshold function, derived from from Pearle's work, 
 g(u,v,s) > -1 + 2/(sqrt(1+3(s/PI))), 
 encodes the same obstruction using a different coordinate along the
 hidden fiber. Although the functional form differs, the meaning is
 the same: the threshold marks where the projection ceases to be
 invertible. You can use this function in the simulation by selecting 
-"Fine" in the dropdown menu.`;
+"Pearle" in the dropdown menu.`;
   inner.appendChild(p8);
 
 
@@ -723,7 +723,7 @@ and removes slice-dependent artifacts.`;
       rightView.material.uniforms.colorB.value.set(colorBlue);
       rightView.material.uniforms.greyColor.value.set(new THREE.Color(colorGrey));
       // update metric and method for both materials
-      const methodFlagVal = (typeof thetaMethodSelect !== 'undefined' && thetaMethodSelect && thetaMethodSelect.value === 'Fine') ? 1.0 : 0.0;
+      const methodFlagVal = (typeof thetaMethodSelect !== 'undefined' && thetaMethodSelect && thetaMethodSelect.value === 'Pearle') ? 1.0 : 0.0;
       let metricVal = 0.5;
       if (typeof metricInput !== 'undefined' && metricInput){ const m = parseFloat(metricInput.value); if (Number.isFinite(m)) metricVal = m; }
       if (leftView.material.uniforms.metricPref) leftView.material.uniforms.metricPref.value = metricVal;
